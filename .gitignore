@@ -1,0 +1,20 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Cached price data (netreba verzovat, je to len lokálny cache)
+cache/
+
+# Streamlit
+.streamlit/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

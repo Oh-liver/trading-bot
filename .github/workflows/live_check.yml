@@ -1,0 +1,52 @@
+name: Live Trading Bot Check
+
+# Spúšťa sa automaticky podľa harmonogramu ("cron") a dá sa spustiť
+# aj ručne cez tlačidlo "Run workflow" v záložke Actions na GitHube.
+on:
+  schedule:
+    - cron: "0 * * * *"   # každú celú hodinu (pozor: čas je v UTC, nie slovenský čas!)
+  workflow_dispatch:
+
+# Potrebné, aby workflow smel commitnúť zmenený stav bota späť do repa
+permissions:
+  contents: write
+
+jobs:
+  live-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repozitára
+        uses: actions/checkout@v4
+
+      - name: Nastavenie Pythonu
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Inštalácia závislostí
+        run: pip install -r requirements.txt
+
+      # Uprav si tickery/stratégiu/parametre podľa toho, čo chceš sledovať.
+      # Dá sa pridať aj viacero krokov "Run live check" pre rôzne tickery naraz.
+      - name: Live kontrola - SPY (SMA crossover)
+        run: |
+          python live_runner.py \
+            --ticker SPY \
+            --strategy sma_crossover \
+            --short-window 3 \
+            --long-window 10 \
+            --interval 1h \
+            --period 7d \
+            --backfill-hours 5 \
+            --initial-cash 10000 \
+            --fee-pct 0.1
+
+      # Zmenený priečinok state/ (stav portfólia + log obchodov) sa commitne
+      # späť do repozitára, aby si ho videl aj v appke a aby na neho nadviazal
+      # ďalší beh o hodinu neskôr.
+      - name: Commit aktualizovaného stavu
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🤖 Live bot check - aktualizácia stavu"
+          file_pattern: "state/*"

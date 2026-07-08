@@ -11,6 +11,12 @@ __pycache__/
 # Cached price data (netreba verzovat, je to len lokálny cache)
 cache/
 
+# POZNÁMKA: priečinok state/ (live stav bota) sa ZÁMERNE NEIGNORUJE -
+# GitHub Actions doň commituje aktuálny stav bota, aby ho appka mohla
+# zobraziť. Ak chceš mať lokálne čisté testovanie bez ovplyvnenia
+# nahraného stavu, zmaž priečinok state/ pred lokálnym testom, alebo
+# použi iný ticker/stratégiu ako v produkčnom workflow.
+
 # Streamlit
 .streamlit/
 

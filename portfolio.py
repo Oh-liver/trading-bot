@@ -82,3 +82,49 @@ class Portfolio:
         running_max = df["equity"].cummax()
         drawdown = (df["equity"] - running_max) / running_max
         return drawdown.min() * 100
+
+    def to_dict(self) -> dict:
+        """Serializácia stavu do JSON-kompatibilného slovníka - potrebné,
+        aby si live bot 'pamätal' svoj stav medzi jednotlivými spusteniami."""
+        return {
+            "initial_cash": self.initial_cash,
+            "cash": self.cash,
+            "shares": self.shares,
+            "fee_pct": self.fee_pct,
+            "trades": [
+                {
+                    "date": pd.Timestamp(t.date).isoformat(),
+                    "action": t.action,
+                    "price": t.price,
+                    "shares": t.shares,
+                    "cash_after": t.cash_after,
+                }
+                for t in self.trades
+            ],
+            "equity_curve": [
+                {"date": pd.Timestamp(e["date"]).isoformat(), "equity": e["equity"]}
+                for e in self.equity_curve
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Portfolio":
+        """Obnoví Portfolio z dictu vytvoreného cez to_dict()."""
+        p = cls(initial_cash=data["initial_cash"], fee_pct=data["fee_pct"])
+        p.cash = data["cash"]
+        p.shares = data["shares"]
+        p.trades = [
+            Trade(
+                date=pd.Timestamp(t["date"]),
+                action=t["action"],
+                price=t["price"],
+                shares=t["shares"],
+                cash_after=t["cash_after"],
+            )
+            for t in data["trades"]
+        ]
+        p.equity_curve = [
+            {"date": pd.Timestamp(e["date"]), "equity": e["equity"]}
+            for e in data["equity_curve"]
+        ]
+        return p

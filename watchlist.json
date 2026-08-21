@@ -26,19 +26,7 @@
   {
     "ticker": "QQQ",
     "strategy": "sma_crossover",
-    "cash": 0.0,
-    "fee_pct": 0.1,
-    "interval": "1h",
-    "backfill_hours": 5,
-    "strategy_kwargs": {
-      "short_window": 3,
-      "long_window": 10
-    }
-  },
-  {
-    "ticker": "NONE",
-    "strategy": "sma_crossover",
-    "cash": 0.0,
+    "cash": 50.0,
     "fee_pct": 0.1,
     "interval": "1h",
     "backfill_hours": 5,

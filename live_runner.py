@@ -12,9 +12,10 @@ Dva režimy:
     python live_runner.py --ticker SPY --strategy sma_crossover \
         --short-window 3 --long-window 10 --initial-cash 10000 --fee-pct 0.1
 
-Pri BUY/SELL signáli sa (ak je nastavená premenná prostredia
-DISCORD_WEBHOOK_URL) pošle upozornenie na Discord - bot sám neobchoduje
-reálne peniaze, len upozorní, že treba obchod vykonať ručne u brokera.
+Po každom behu sa (ak je nastavená premenná prostredia DISCORD_WEBHOOK_URL)
+pošle JEDNA Discord správa so stavom všetkých tickerov z watchlistu naraz
+(funguje automaticky aj keď do watchlistu pridáš ďalšie tickery) - bot sám
+neobchoduje reálne peniaze, len upozorní, že treba obchod vykonať ručne u brokera.
 
 Príklad naplánovania cez cron (každú hodinu, v pracovné dni):
     0 * * * 1-5 cd /cesta/k/projektu && /cesta/k/venv/bin/python live_runner.py --watchlist watchlist.json >> live.log 2>&1
@@ -27,25 +28,10 @@ podľa zvoleného harmonogramu (napr. každú hodinu).
 import argparse
 from live import run_live_check
 from watchlist import load_watchlist
-from notify import send_discord_notification, format_trade_message, format_status_message
+from notify import send_discord_notification, format_result_message
 
 
-def notify_result(ticker: str, result: dict) -> None:
-    """Pošle Discord upozornenie pre KAŽDÚ kontrolu (nielen reálny BUY/SELL),
-    aby bola na Discorde vidno kompletná, prehľadná história behov bota."""
-    action = result["action_taken"]
-    if action in ("BUY", "SELL"):
-        last_trade = result["portfolio"].trades[-1]
-        trade_cash = last_trade.shares * last_trade.price if action == "BUY" else last_trade.cash_after
-        message = format_trade_message(ticker, action, result["latest_price"], trade_cash)
-    else:
-        message = format_status_message(
-            ticker, action, result["latest_price"], result["current_equity"], result["total_return_pct"]
-        )
-    send_discord_notification(message)
-
-
-def run_one(ticker, strategy, strategy_kwargs, initial_cash, fee_pct_pct, interval, period, backfill_hours):
+def run_one(ticker, strategy, strategy_kwargs, initial_cash, fee_pct_pct, interval, period, backfill_hours) -> dict:
     """fee_pct_pct je poplatok V PERCENTÁCH (napr. 0.1 = 0.1%), run_live_check chce zlomok."""
     result = run_live_check(
         ticker=ticker,
@@ -60,7 +46,7 @@ def run_one(ticker, strategy, strategy_kwargs, initial_cash, fee_pct_pct, interv
     print(f"[{result['latest_timestamp']}] {ticker} | cena={result['latest_price']:.2f} | "
           f"akcia={result['action_taken']} | equity={result['current_equity']:.2f} "
           f"({result['total_return_pct']:+.2f}%) | obchodov spolu={result['num_trades']}")
-    notify_result(ticker, result)
+    return result
 
 
 def main():
@@ -92,8 +78,9 @@ def main():
         if not entries:
             print(f"Watchlist '{args.watchlist}' je prázdny alebo neexistuje.")
             return
+        messages = []
         for entry in entries:
-            run_one(
+            result = run_one(
                 ticker=entry["ticker"],
                 strategy=entry["strategy"],
                 strategy_kwargs=entry["strategy_kwargs"],
@@ -103,6 +90,8 @@ def main():
                 period=entry.get("period", "7d"),
                 backfill_hours=entry.get("backfill_hours", 5.0),
             )
+            messages.append(format_result_message(entry["ticker"], result))
+        send_discord_notification("\n".join(messages))
         return
 
     if not args.ticker or not args.strategy:
@@ -113,7 +102,7 @@ def main():
     else:
         strategy_kwargs = {"period": args.rsi_period, "oversold": args.oversold, "overbought": args.overbought}
 
-    run_one(
+    result = run_one(
         ticker=args.ticker,
         strategy=args.strategy,
         strategy_kwargs=strategy_kwargs,
@@ -123,6 +112,7 @@ def main():
         period=args.period,
         backfill_hours=args.backfill_hours,
     )
+    send_discord_notification(format_result_message(args.ticker, result))
 
 
 if __name__ == "__main__":

@@ -45,3 +45,17 @@ def format_status_message(ticker: str, action: str, price: float, equity: float,
     return (
         f"⚪ {ticker}: {action} @ {price:.2f} | equity {equity:.2f} € ({total_return_pct:+.2f}%)"
     )
+
+
+def format_result_message(ticker: str, result: dict) -> str:
+    """Zostaví jeden riadok správy o výsledku kontroly pre daný ticker (BUY/SELL
+    alebo len bežná kontrola bez obchodu) - vhodné na spojenie viacerých tickerov
+    do jednej Discord správy za beh."""
+    action = result["action_taken"]
+    if action in ("BUY", "SELL"):
+        last_trade = result["portfolio"].trades[-1]
+        trade_cash = last_trade.shares * last_trade.price if action == "BUY" else last_trade.cash_after
+        return format_trade_message(ticker, action, result["latest_price"], trade_cash)
+    return format_status_message(
+        ticker, action, result["latest_price"], result["current_equity"], result["total_return_pct"]
+    )

@@ -27,17 +27,21 @@ podľa zvoleného harmonogramu (napr. každú hodinu).
 import argparse
 from live import run_live_check
 from watchlist import load_watchlist
-from notify import send_discord_notification, format_trade_message
+from notify import send_discord_notification, format_trade_message, format_status_message
 
 
-def notify_if_trade(ticker: str, result: dict) -> None:
-    """Pošle Discord upozornenie, ak táto kontrola vykonala reálny BUY/SELL
-    (nie počas backfillu - tie obchody sú už v minulosti, netreba ich vykonávať ručne)."""
-    if result["action_taken"] not in ("BUY", "SELL"):
-        return
-    last_trade = result["portfolio"].trades[-1]
-    trade_cash = last_trade.shares * last_trade.price if result["action_taken"] == "BUY" else last_trade.cash_after
-    message = format_trade_message(ticker, result["action_taken"], result["latest_price"], trade_cash)
+def notify_result(ticker: str, result: dict) -> None:
+    """Pošle Discord upozornenie pre KAŽDÚ kontrolu (nielen reálny BUY/SELL),
+    aby bola na Discorde vidno kompletná, prehľadná história behov bota."""
+    action = result["action_taken"]
+    if action in ("BUY", "SELL"):
+        last_trade = result["portfolio"].trades[-1]
+        trade_cash = last_trade.shares * last_trade.price if action == "BUY" else last_trade.cash_after
+        message = format_trade_message(ticker, action, result["latest_price"], trade_cash)
+    else:
+        message = format_status_message(
+            ticker, action, result["latest_price"], result["current_equity"], result["total_return_pct"]
+        )
     send_discord_notification(message)
 
 
@@ -56,7 +60,7 @@ def run_one(ticker, strategy, strategy_kwargs, initial_cash, fee_pct_pct, interv
     print(f"[{result['latest_timestamp']}] {ticker} | cena={result['latest_price']:.2f} | "
           f"akcia={result['action_taken']} | equity={result['current_equity']:.2f} "
           f"({result['total_return_pct']:+.2f}%) | obchodov spolu={result['num_trades']}")
-    notify_if_trade(ticker, result)
+    notify_result(ticker, result)
 
 
 def main():

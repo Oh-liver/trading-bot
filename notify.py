@@ -37,3 +37,11 @@ def format_trade_message(ticker: str, action: str, price: float, trade_cash: flo
             f"Predaj celú svoju pozíciu v **{ticker}** (výnos cca {trade_cash:.2f} €)."
         )
     return f"ℹ️ {ticker}: {action} @ {price:.2f}"
+
+
+def format_status_message(ticker: str, action: str, price: float, equity: float, total_return_pct: float) -> str:
+    """Zostaví stručnú správu o kontrole bez obchodu (NONE/BACKFILL) - aby bola
+    na Discorde vidno kompletná, prehľadná história každého behu bota."""
+    return (
+        f"⚪ {ticker}: {action} @ {price:.2f} | equity {equity:.2f} € ({total_return_pct:+.2f}%)"
+    )

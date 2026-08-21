@@ -141,11 +141,9 @@ def run_live_check(
         for ts, row in backfill_df.iterrows():
             price = float(row["Close"])
             bar_action = "NONE"
-            if row["signal"] == "BUY":
-                portfolio.buy(ts, price)
+            if row["signal"] == "BUY" and portfolio.buy(ts, price):
                 bar_action = "BUY"
-            elif row["signal"] == "SELL":
-                portfolio.sell(ts, price)
+            elif row["signal"] == "SELL" and portfolio.sell(ts, price):
                 bar_action = "SELL"
 
             portfolio.mark_to_market(ts, price)
@@ -157,11 +155,9 @@ def run_live_check(
         action_taken = f"BACKFILL ({sum(1 for a in actions_log if a != 'NONE')} obchod(y) za posledných {backfill_hours:.0f}h)"
 
     elif is_new_bar:
-        if latest_signal == "BUY":
-            portfolio.buy(latest_ts, latest_price)
+        if latest_signal == "BUY" and portfolio.buy(latest_ts, latest_price):
             action_taken = "BUY"
-        elif latest_signal == "SELL":
-            portfolio.sell(latest_ts, latest_price)
+        elif latest_signal == "SELL" and portfolio.sell(latest_ts, latest_price):
             action_taken = "SELL"
 
         portfolio.mark_to_market(latest_ts, latest_price)

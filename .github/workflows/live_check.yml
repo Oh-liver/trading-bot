@@ -6,10 +6,21 @@ on:
   schedule:
     - cron: "0 * * * *"   # každú celú hodinu (pozor: čas je v UTC, nie slovenský čas!)
   workflow_dispatch:
+    inputs:
+      test_notification:
+        description: "Poslať testovaciu Discord správu (bez ohľadu na to, či nastal BUY/SELL signál)"
+        type: boolean
+        default: false
 
 # Potrebné, aby workflow smel commitnúť zmenený stav bota späť do repa
 permissions:
   contents: write
+
+# Zabráni tomu, aby bežali dva behy naraz (napr. hodinový cron + manuálny test)
+# a navzájom si kolidovali pri pushnutí zmeneného state/ - druhý beh počká.
+concurrency:
+  group: live-check
+  cancel-in-progress: false
 
 jobs:
   live-check:
@@ -27,20 +38,25 @@ jobs:
       - name: Inštalácia závislostí
         run: pip install -r requirements.txt
 
-      # Uprav si tickery/stratégiu/parametre podľa toho, čo chceš sledovať.
-      # Dá sa pridať aj viacero krokov "Run live check" pre rôzne tickery naraz.
-      - name: Live kontrola - SPY (SMA crossover)
+      # Manuálne otestovanie Discord webhooku priamo z GitHub Actions - zaškrtni
+      # "test_notification" pri "Run workflow", aby si overil, že DISCORD_WEBHOOK_URL
+      # secret je nastavený správne, bez čakania na skutočný BUY/SELL signál.
+      - name: Testovacia Discord notifikácia
+        if: ${{ github.event.inputs.test_notification == 'true' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          python live_runner.py \
-            --ticker SPY \
-            --strategy sma_crossover \
-            --short-window 3 \
-            --long-window 10 \
-            --interval 1h \
-            --period 7d \
-            --backfill-hours 5 \
-            --initial-cash 10000 \
-            --fee-pct 0.1
+          python -c "from notify import send_discord_notification; ok = send_discord_notification('Test notifikacia z GitHub Actions: ak vidis tuto spravu, secret DISCORD_WEBHOOK_URL je nastaveny spravne.'); print('sent:', ok)"
+
+      # Watchlist (viac tickerov naraz, každý s vlastnou peňažnou alokáciou)
+      # sa upravuje priamo vo watchlist.json - pozri README.
+      # DISCORD_WEBHOOK_URL: nastav ako GitHub secret (Settings -> Secrets and
+      # variables -> Actions), ak chceš pri BUY/SELL signáli dostať upozornenie
+      # na Discord. Bez neho beží bot ďalej, len bez notifikácií.
+      - name: Live kontrola - watchlist (všetky tickery)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python live_runner.py --watchlist watchlist.json
 
       # Zmenený priečinok state/ (stav portfólia + log obchodov) sa commitne
       # späť do repozitára, aby si ho videl aj v appke a aby na neho nadviazal

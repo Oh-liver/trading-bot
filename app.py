@@ -17,6 +17,8 @@ from data import get_price_data
 from strategy import STRATEGIES
 from backtest import run_backtest, buy_and_hold_equity, summarize
 import live as live_module
+import watchlist as watchlist_module
+import notify as notify_module
 
 
 st.set_page_config(page_title="Trading Bot Simulator", layout="wide")
@@ -52,6 +54,24 @@ def header_with_tooltip(text: str, tooltip: str, level: str = "subheader"):
     )
 
 
+COMMON_TICKERS = ["SPY", "QQQ", "TQQQ", "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META"]
+CUSTOM_TICKER_OPTION = "Vlastný (napíš ticker)"
+
+
+def ticker_selector(label: str, key_prefix: str, default: str = "SPY") -> str:
+    """Selectbox s bežnými tickermi + možnosť napísať si vlastný."""
+    options = COMMON_TICKERS + [CUSTOM_TICKER_OPTION]
+    choice = st.sidebar.selectbox(
+        label, options, index=options.index(default), key=f"{key_prefix}_select",
+        help="Vyber z bežných tickerov, alebo zvoľ 'Vlastný' a napíš vlastnú skratku.",
+    )
+    if choice == CUSTOM_TICKER_OPTION:
+        return st.sidebar.text_input(
+            "Vlastný ticker", value=default, key=f"{key_prefix}_custom",
+        ).upper().strip()
+    return choice
+
+
 tab_backtest, tab_live = st.tabs(["📊 Backtest (historické dáta)", "🔴 Live simulácia (reálne dáta, teraz)"])
 
 # ---------- Sidebar: nastavenia pre BACKTEST ----------
@@ -59,32 +79,33 @@ st.sidebar.header("⚙️ Backtest - nastavenia")
 
 timeframe_mode = st.sidebar.radio(
     "Časový rámec",
-    options=["Dlhodobo (denné dáta, roky)", "Krátkodobo (posledný týždeň, hodinové dáta)"],
+    options=["Dlhodobo (denné dáta, roky)", "Krátkodobo (hodinové dáta, vlastné obdobie)"],
     help=(
         "Dlhodobo: denné sviečky, môžeš testovať na rokoch histórie. "
-        "Krátkodobo: hodinové sviečky za posledných ~7 dní - vhodné na "
-        "simuláciu obchodovania 'behom týždňa'. yfinance z technických "
-        "dôvodov nedovoľuje ťahať hodinové dáta príliš ďaleko do minulosti."
+        "Krátkodobo: hodinové sviečky - obdobie si zvolíš nižšie (Od/Do). "
+        "yfinance z technických dôvodov nedovoľuje ťahať hodinové dáta príliš ďaleko do minulosti "
+        "(cca posledných 730 dní)."
     ),
 )
 is_short_term = timeframe_mode.startswith("Krátkodobo")
 
-ticker = st.sidebar.text_input(
-    "Ticker",
-    value="SPY",
-    help="Skratka ETF alebo akcie na burze, napr. SPY (S&P 500 ETF), AAPL (Apple), QQQ (Nasdaq ETF).",
-)
+ticker = ticker_selector("Ticker", "backtest_ticker")
 
 if is_short_term:
-    st.sidebar.caption("📅 Obdobie: posledných 7 dní, hodinové sviečky (nastaviteľné dátumy nie sú potrebné).")
-    period = "7d"
+    col_a, col_b = st.sidebar.columns(2)
+    start_date = col_a.date_input(
+        "Od", value=pd.Timestamp.now().normalize() - pd.Timedelta(days=7),
+        help="Začiatok obdobia pre hodinové sviečky.",
+    )
+    end_date = col_b.date_input(
+        "Do", value=pd.Timestamp.now().normalize(),
+        help="Koniec obdobia. Pozor: yfinance obmedzuje hodinové (1h) dáta na cca posledných 730 dní.",
+    )
     interval = "1h"
-    start_date = end_date = None
 else:
     col_a, col_b = st.sidebar.columns(2)
     start_date = col_a.date_input("Od", value=pd.to_datetime("2022-01-01"), help="Začiatok obdobia, na ktorom sa bot otestuje.")
     end_date = col_b.date_input("Do", value=pd.to_datetime("2024-01-01"), help="Koniec testovaného obdobia.")
-    period = None
     interval = "1d"
 
 strategy_name = st.sidebar.selectbox(
@@ -103,20 +124,25 @@ if strategy_name == "sma_crossover":
     if is_short_term:
         short_window = st.sidebar.slider(
             "Krátka SMA (počet sviečok = hodín)", 2, 20, 3,
-            help="Priemer ceny za posledných N hodinových sviečok. Menšie číslo = rýchlejšia reakcia, viac obchodov.",
+            help="Priemer ceny za posledných N hodinových sviečok. Menšie číslo = rýchlejšia reakcia, viac obchodov. "
+                 "Konzervatívna predvoľba - krátkodobé/hodinové SMA parametre sa nedajú spoľahlivo optimalizovať "
+                 "na obmedzenej histórii, ktorú yfinance pre hodinové dáta poskytuje.",
         )
         long_window = st.sidebar.slider(
             "Dlhá SMA (počet sviečok = hodín)", 5, 60, 10,
-            help="Priemer ceny za dlhšie obdobie hodinových sviečok. Slúži ako 'pomalší' referenčný trend.",
+            help="Priemer ceny za dlhšie obdobie hodinových sviečok. Slúži ako 'pomalší' referenčný trend. "
+                 "Konzervatívna predvoľba (viď poznámka pri krátkej SMA).",
         )
     else:
         short_window = st.sidebar.slider(
-            "Krátka SMA (dni)", 5, 50, 20,
-            help="Priemer zatváracej ceny za posledných N dní. Menšie číslo = rýchlejšia reakcia, viac obchodov.",
+            "Krátka SMA (dni)", 5, 50, 5,
+            help="Priemer zatváracej ceny za posledných N dní. Menšie číslo = rýchlejšia reakcia, viac obchodov. "
+                 "Predvoľba 5/20 je najlepšia nájdená kombinácia pri backteste SPY na dennej histórii (2016-2024).",
         )
         long_window = st.sidebar.slider(
-            "Dlhá SMA (dni)", 20, 200, 50,
-            help="Priemer zatváracej ceny za dlhšie obdobie. Slúži ako 'pomalší' referenčný trend.",
+            "Dlhá SMA (dni)", 20, 200, 20,
+            help="Priemer zatváracej ceny za dlhšie obdobie. Slúži ako 'pomalší' referenčný trend. "
+                 "Predvoľba 5/20 je najlepšia nájdená kombinácia pri backteste SPY na dennej histórii (2016-2024).",
         )
     strategy_kwargs = {"short_window": short_window, "long_window": long_window}
 
@@ -159,10 +185,7 @@ with tab_backtest:
     if run_button:
         try:
             with st.spinner(f"Sťahujem dáta pre {ticker}..."):
-                if is_short_term:
-                    df = get_price_data(ticker, period=period, interval=interval)
-                else:
-                    df = get_price_data(ticker, start=str(start_date), end=str(end_date), interval=interval)
+                df = get_price_data(ticker, start=str(start_date), end=str(end_date), interval=interval)
         except Exception as e:
             st.error(f"Chyba pri sťahovaní dát: {e}")
             st.stop()
@@ -263,10 +286,7 @@ with tab_backtest:
 # ---------- Sidebar: nastavenia pre LIVE simuláciu ----------
 st.sidebar.header("🔴 Live simulácia - nastavenia")
 
-live_ticker = st.sidebar.text_input(
-    "Ticker (live)", value="SPY", key="live_ticker",
-    help="Ticker, ktorý live bot sleduje. Každý ticker+stratégia má svoj vlastný uložený stav.",
-)
+live_ticker = ticker_selector("Ticker (live)", "live_ticker")
 live_strategy_name = st.sidebar.selectbox(
     "Stratégia (live)", options=list(STRATEGIES.keys()), key="live_strategy",
     help="Rovnaké stratégie ako pri backteste - odporúčame najprv overiť na backteste, až potom pustiť live.",
@@ -274,9 +294,11 @@ live_strategy_name = st.sidebar.selectbox(
 
 if live_strategy_name == "sma_crossover":
     live_short = st.sidebar.slider("Krátka SMA (live, sviečky)", 2, 20, 3, key="live_short",
-                                     help="Priemer za posledných N sviečok (hodín, ak interval=1h).")
+                                     help="Priemer za posledných N sviečok (hodín, ak interval=1h). "
+                                          "Konzervatívna predvoľba - nedá sa spoľahlivo optimalizovať na obmedzenej histórii.")
     live_long = st.sidebar.slider("Dlhá SMA (live, sviečky)", 5, 60, 10, key="live_long",
-                                    help="Priemer za dlhšie obdobie sviečok - pomalší referenčný trend.")
+                                    help="Priemer za dlhšie obdobie sviečok - pomalší referenčný trend. "
+                                         "Konzervatívna predvoľba (viď poznámka pri krátkej SMA).")
     live_strategy_kwargs = {"short_window": live_short, "long_window": live_long}
 else:
     live_rsi_period = st.sidebar.slider("RSI perióda (live, sviečky)", 3, 30, 6, key="live_rsi_period",
@@ -304,6 +326,21 @@ live_backfill_hours = st.sidebar.slider(
     "Dobehnúť históriu pri štarte (hodiny)", 1, 48, 5, key="live_backfill",
     help="Pri úplne prvej kontrole (žiadny uložený stav) bot naraz spracuje posledných N hodín "
          "ako mini-backtest, namiesto toho, aby začal na nule a čakal na budúce sviečky.",
+)
+
+discord_webhook_url = st.sidebar.text_input(
+    "Discord webhook URL (voliteľné)", type="password", key="discord_webhook",
+    help="Ak vyplníš, pri BUY/SELL signáli (jednotlivý ticker aj watchlist) sa pošle upozornenie na Discord, "
+         "aby si obchod vykonal ručne u svojho brokera. Naplánovaný beh cez GitHub Actions namiesto toho "
+         "číta premennú DISCORD_WEBHOOK_URL z GitHub secrets.",
+)
+
+live_auto_refresh = st.sidebar.checkbox(
+    "Auto-obnovovanie stavu (60s)", value=True, key="live_autorefresh",
+    help="Kým je stránka otvorená v prehliadači, každých 60s znova načíta stav zo súborov v state/ "
+         "a prekreslí graf/metriky - bez nutnosti klikať. NErobí to nový live check (to stále vyžaduje "
+         "kliknutie na 'Skontrolovať teraz'), len zobrazí najnovšie uložené dáta. Ak bot beží cez GitHub "
+         "Actions (na GitHube, nie lokálne), táto appka uvidí jeho zmeny až po 'git pull' lokálneho repa.",
 )
 
 live_check_button = st.sidebar.button(
@@ -356,58 +393,197 @@ with tab_live:
                 st.info(f"Nová sviečka spracovaná ({result['latest_timestamp']}), signál bol HOLD - žiadny obchod.")
             else:
                 st.success(f"Nová sviečka spracovaná ({result['latest_timestamp']}) - bot vykonal: **{result['action_taken']}** za {result['latest_price']:.2f}")
+                last_trade = result["portfolio"].trades[-1]
+                trade_cash = last_trade.shares * last_trade.price if result["action_taken"] == "BUY" else last_trade.cash_after
+                msg = notify_module.format_trade_message(live_ticker, result["action_taken"], result["latest_price"], trade_cash)
+                if notify_module.send_discord_notification(msg, webhook_url=discord_webhook_url):
+                    st.caption("📨 Discord upozornenie odoslané.")
         else:
             st.info("Od poslednej kontroly nepribudla žiadna nová sviečka - stav sa nemenil.")
 
-    # ---------- Zobrazenie aktuálneho stavu (aj bez kliknutia na kontrolu) ----------
-    portfolio_state, last_processed = live_module.load_state(
-        live_ticker, live_strategy_name, live_initial_cash, live_fee_pct
-    )
-    log_df = live_module.load_log(live_ticker, live_strategy_name)
-
-    if last_processed is None:
-        st.info(f"Pre {live_ticker} / {live_strategy_name} zatiaľ nebola vykonaná žiadna kontrola. Klikni na '🔄 Skontrolovať teraz' v ľavom paneli.")
-    else:
-        current_price = log_df["price"].iloc[-1] if not log_df.empty else None
-        current_equity = portfolio_state.cash + portfolio_state.shares * (current_price or 0)
+    # ---------- Zobrazenie aktuálneho stavu portfólia (podľa watchlistu) ----------
+    # @st.fragment s run_every periodicky prekreslí len tento blok (nie celú appku),
+    # kým je stránka otvorená v prehliadači - vďaka tomu sa prehľad obnovuje sám,
+    # ak state/ súbory medzitým zmenil iný proces (napr. lokálny cron).
+    @st.fragment(run_every=60 if live_auto_refresh else None)
+    def render_live_state():
+        entries = watchlist_module.load_watchlist()
+        if not entries:
+            st.info("Watchlist je prázdny - pridaj tickery v sekcii 'Watchlist' nižšie a ulož.")
+            return
 
         header_with_tooltip(
-            f"Aktuálny stav - {live_ticker} / {live_strategy_name}",
-            "Stav bota k poslednej vykonanej kontrole. Klikni na 'Skontrolovať teraz' pre čerstvé dáta.",
-        )
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Posledná kontrola", str(last_processed), help="Časová značka poslednej spracovanej sviečky.")
-        c2.metric("Hotovosť", f"{portfolio_state.cash:,.2f} €", help="Voľná virtuálna hotovosť, ktorú bot momentálne nemá investovanú.")
-        c3.metric("Pozícia", f"{portfolio_state.shares:.4f} ks", help="Koľko kusov akcie/ETF bot momentálne drží.")
-        c4.metric(
-            "Hodnota portfólia", f"{current_equity:,.2f} €",
-            f"{(current_equity / live_initial_cash - 1) * 100:+.2f}%",
-            help="Hotovosť + hodnota otvorenej pozície pri poslednej známej cene.",
+            "Aktuálny stav portfólia (watchlist)",
+            "Stav bota pre každý ticker vo watchliste k poslednej vykonanej kontrole. Alokácia je "
+            "peňažná suma nastavená pre daný ticker vo watchliste nižšie.",
         )
 
-        if not log_df.empty:
+        rows = []
+        equity_traces = []
+        trades_frames = []
+        for entry in entries:
+            ticker = entry["ticker"]
+            strategy = entry.get("strategy", "sma_crossover")
+            allocation = entry.get("cash", 0.0)
+            portfolio_state, last_processed = live_module.load_state(
+                ticker, strategy, allocation, entry.get("fee_pct", 0.1) / 100
+            )
+            log_df = live_module.load_log(ticker, strategy)
+            current_price = log_df["price"].iloc[-1] if not log_df.empty else None
+            current_equity = (
+                portfolio_state.cash + portfolio_state.shares * (current_price or 0)
+                if last_processed is not None else allocation
+            )
+
+            rows.append({
+                "Ticker": ticker,
+                "Alokácia (€)": allocation,
+                "Posledná kontrola": str(last_processed) if last_processed is not None else "zatiaľ žiadna",
+                "Hotovosť (€)": portfolio_state.cash,
+                "Pozícia (ks)": portfolio_state.shares,
+                "Cena": current_price,
+                "Hodnota (€)": current_equity,
+                "Návratnosť (%)": (current_equity / allocation - 1) * 100 if allocation else 0.0,
+            })
+
+            if not log_df.empty:
+                equity_traces.append((ticker, log_df))
+
+            trades_df = portfolio_state.trades_df()
+            if not trades_df.empty:
+                trades_df = trades_df.copy()
+                trades_df.insert(0, "ticker", ticker)
+                trades_frames.append(trades_df)
+
+        overview_df = pd.DataFrame(rows)
+        st.dataframe(overview_df, use_container_width=True)
+
+        total_allocation = overview_df["Alokácia (€)"].sum()
+        total_value = overview_df["Hodnota (€)"].sum()
+        total_return = (total_value / total_allocation - 1) * 100 if total_allocation else 0.0
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Celková alokácia", f"{total_allocation:,.2f} €",
+                   help="Súčet peňažnej alokácie zo všetkých tickerov vo watchliste.")
+        c2.metric("Aktuálna hodnota portfólia", f"{total_value:,.2f} €",
+                   help="Súčet hotovosti + hodnoty otvorených pozícií naprieč všetkými tickermi.")
+        c3.metric("Celková návratnosť", f"{total_return:+.2f}%")
+
+        if equity_traces:
             header_with_tooltip(
-                "Vývoj hodnoty portfólia (live)",
-                "Každý bod je jedna spracovaná sviečka od začiatku live sledovania tohto tickeru+stratégie.",
+                "Vývoj hodnoty portfólia (live, podľa tickeru)",
+                "Každá čiara je equity krivka jedného tickeru z watchlistu od začiatku jeho live sledovania.",
             )
             fig_live = go.Figure()
-            fig_live.add_trace(go.Scatter(x=log_df["timestamp"], y=log_df["equity"],
-                                            name="Equity", line=dict(color="#36B37E")))
-            buys_log = log_df[log_df["action"] == "BUY"]
-            sells_log = log_df[log_df["action"] == "SELL"]
-            fig_live.add_trace(go.Scatter(x=buys_log["timestamp"], y=buys_log["equity"], mode="markers",
-                                            name="BUY", marker=dict(symbol="triangle-up", size=12, color="green")))
-            fig_live.add_trace(go.Scatter(x=sells_log["timestamp"], y=sells_log["equity"], mode="markers",
-                                            name="SELL", marker=dict(symbol="triangle-down", size=12, color="red")))
+            for ticker, log_df in equity_traces:
+                fig_live.add_trace(go.Scatter(x=log_df["timestamp"], y=log_df["equity"], name=ticker, mode="lines"))
             fig_live.update_layout(height=400, margin=dict(l=20, r=20, t=20, b=20))
             st.plotly_chart(fig_live, use_container_width=True)
 
         header_with_tooltip(
-            "História live obchodov",
-            "Zoznam skutočných BUY/SELL rozhodnutí, ktoré live bot vykonal (s virtuálnymi peniazmi) od začiatku sledovania.",
+            "História live obchodov (celý watchlist)",
+            "Zoznam skutočných BUY/SELL rozhodnutí naprieč celým watchlistom, najnovšie hore.",
         )
-        live_trades_df = portfolio_state.trades_df()
-        if live_trades_df.empty:
-            st.info("Zatiaľ žiadny live obchod.")
+        if trades_frames:
+            combined_trades = pd.concat(trades_frames, ignore_index=True).sort_values("date", ascending=False)
+            st.dataframe(combined_trades, use_container_width=True)
         else:
-            st.dataframe(live_trades_df, use_container_width=True)
+            st.info("Zatiaľ žiadny live obchod naprieč watchlistom.")
+
+    render_live_state()
+
+    # ---------- Watchlist: viac tickerov naraz ----------
+    st.divider()
+    header_with_tooltip(
+        "📋 Watchlist - viac tickerov naraz",
+        "Zoznam tickerov sledovaných súčasne, každý s vlastnou peňažnou alokáciou. Všetky použijú "
+        "rovnakú stratégiu a nastavenie z panela vyššie. Ten istý watchlist.json používa aj naplánovaný "
+        "beh na pozadí cez GitHub Actions (live_runner.py --watchlist).",
+    )
+
+    watchlist_entries = watchlist_module.load_watchlist()
+    watchlist_display = pd.DataFrame(
+        [{"ticker": e["ticker"], "cash": e["cash"]} for e in watchlist_entries]
+    ) if watchlist_entries else pd.DataFrame({"ticker": [], "cash": []})
+
+    edited_watchlist = st.data_editor(
+        watchlist_display,
+        num_rows="dynamic",
+        column_config={
+            "ticker": st.column_config.TextColumn("Ticker", help="Skratka, napr. SPY, QQQ, AAPL."),
+            "cash": st.column_config.NumberColumn(
+                "Peňažná alokácia (€)", min_value=0.0, step=100.0,
+                help="Použije sa len pri úplne prvom behu pre tento ticker - potom si bot pamätá skutočný stav.",
+            ),
+        },
+        key="watchlist_editor",
+        use_container_width=True,
+    )
+
+    col_save, col_run = st.columns(2)
+    watchlist_save_button = col_save.button("💾 Uložiť watchlist", key="watchlist_save_btn")
+    watchlist_run_button = col_run.button("🔄 Skontrolovať celý watchlist", key="watchlist_run_btn")
+
+    if watchlist_save_button:
+        new_entries = [
+            {
+                "ticker": str(row["ticker"]).upper().strip(),
+                "strategy": live_strategy_name,
+                "cash": float(row["cash"]) if pd.notna(row["cash"]) else 0.0,
+                "fee_pct": live_fee_pct * 100,
+                "interval": live_interval,
+                "backfill_hours": live_backfill_hours,
+                "strategy_kwargs": live_strategy_kwargs,
+            }
+            for _, row in edited_watchlist.iterrows()
+            if str(row["ticker"]).strip()
+        ]
+        watchlist_module.save_watchlist(new_entries)
+        st.success(f"Watchlist uložený ({len(new_entries)} tickerov) so stratégiou '{live_strategy_name}' z panela vyššie.")
+
+    if watchlist_run_button:
+        entries_to_run = watchlist_module.load_watchlist()
+        if not entries_to_run:
+            st.warning("Watchlist je prázdny - pridaj riadky do tabuľky a klikni na 'Uložiť watchlist'.")
+        else:
+            results_rows = []
+            for entry in entries_to_run:
+                try:
+                    with st.spinner(f"Sťahujem dáta pre {entry['ticker']}..."):
+                        entry_period = live_period_map.get(entry.get("interval", "1h"), "7d")
+                        result = live_module.run_live_check(
+                            ticker=entry["ticker"],
+                            strategy_name=entry["strategy"],
+                            strategy_kwargs=entry["strategy_kwargs"],
+                            initial_cash=entry["cash"],
+                            fee_pct=entry.get("fee_pct", 0.1) / 100,
+                            interval=entry.get("interval", "1h"),
+                            period=entry_period,
+                            backfill_hours=entry.get("backfill_hours", 5.0),
+                        )
+                except Exception as e:
+                    st.error(f"{entry['ticker']}: chyba pri kontrole - {e}")
+                    continue
+
+                if result["action_taken"] in ("BUY", "SELL"):
+                    last_trade = result["portfolio"].trades[-1]
+                    trade_cash = (last_trade.shares * last_trade.price if result["action_taken"] == "BUY"
+                                  else last_trade.cash_after)
+                    msg = notify_module.format_trade_message(
+                        entry["ticker"], result["action_taken"], result["latest_price"], trade_cash
+                    )
+                    sent = notify_module.send_discord_notification(msg, webhook_url=discord_webhook_url)
+                    note = "Discord upozornenie odoslané." if sent else "Discord webhook nie je nastavený."
+                    st.success(f"{entry['ticker']}: {result['action_taken']} @ {result['latest_price']:.2f} - {note}")
+                else:
+                    st.info(f"{entry['ticker']}: žiadny nový obchod ({result['action_taken']}).")
+
+                results_rows.append({
+                    "Ticker": entry["ticker"],
+                    "Cena": result["latest_price"],
+                    "Akcia": result["action_taken"],
+                    "Equity (€)": result["current_equity"],
+                    "Návratnosť (%)": result["total_return_pct"],
+                })
+
+            if results_rows:
+                st.dataframe(pd.DataFrame(results_rows), use_container_width=True)

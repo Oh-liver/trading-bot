@@ -34,24 +34,26 @@ class Portfolio:
         self.trades: list[Trade] = []
         self.equity_curve: list[dict] = []  # denný záznam hodnoty portfólia
 
-    def buy(self, date, price: float):
+    def buy(self, date, price: float) -> bool:
         if self.cash <= 0 or self.shares > 0:
-            return  # už sme "in" alebo nemáme peniaze
+            return False  # už sme "in" alebo nemáme peniaze
         fee = self.cash * self.fee_pct
         usable_cash = self.cash - fee
         self.shares = usable_cash / price
         self.cash = 0.0
         self.trades.append(Trade(date, "BUY", price, self.shares, self.cash))
+        return True
 
-    def sell(self, date, price: float):
+    def sell(self, date, price: float) -> bool:
         if self.shares <= 0:
-            return  # nemáme čo predať
+            return False  # nemáme čo predať
         proceeds = self.shares * price
         fee = proceeds * self.fee_pct
         self.cash = proceeds - fee
         sold_shares = self.shares
         self.shares = 0.0
         self.trades.append(Trade(date, "SELL", price, sold_shares, self.cash))
+        return True
 
     def mark_to_market(self, date, price: float):
         """Zapíše aktuálnu hodnotu portfólia (cash + pozícia) k danému dňu."""

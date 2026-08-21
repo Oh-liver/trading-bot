@@ -39,23 +39,25 @@ def format_trade_message(ticker: str, action: str, price: float, trade_cash: flo
     return f"ℹ️ {ticker}: {action} @ {price:.2f}"
 
 
-def format_status_message(ticker: str, action: str, price: float, equity: float, total_return_pct: float) -> str:
-    """Zostaví stručnú správu o kontrole bez obchodu (NONE/BACKFILL) - aby bola
-    na Discorde vidno kompletná, prehľadná história každého behu bota."""
-    return (
-        f"⚪ {ticker}: {action} @ {price:.2f} | equity {equity:.2f} € ({total_return_pct:+.2f}%)"
-    )
-
-
 def format_result_message(ticker: str, result: dict) -> str:
-    """Zostaví jeden riadok správy o výsledku kontroly pre daný ticker (BUY/SELL
-    alebo len bežná kontrola bez obchodu) - vhodné na spojenie viacerých tickerov
-    do jednej Discord správy za beh."""
+    """Zostaví blok správy o výsledku kontroly pre daný ticker: obchod za túto
+    hodinu (ak nejaký nastal), počiatočný vklad a odkedy sa pre tento ticker
+    obchoduje. Viacero takýchto blokov sa spojí do jednej Discord správy za beh."""
+    portfolio = result["portfolio"]
     action = result["action_taken"]
+
     if action in ("BUY", "SELL"):
-        last_trade = result["portfolio"].trades[-1]
+        last_trade = portfolio.trades[-1]
         trade_cash = last_trade.shares * last_trade.price if action == "BUY" else last_trade.cash_after
-        return format_trade_message(ticker, action, result["latest_price"], trade_cash)
-    return format_status_message(
-        ticker, action, result["latest_price"], result["current_equity"], result["total_return_pct"]
+        headline = format_trade_message(ticker, action, result["latest_price"], trade_cash)
+    else:
+        headline = (
+            f"⚪ {ticker}: žiadny obchod túto hodinu @ {result['latest_price']:.2f} | "
+            f"equity {result['current_equity']:.2f} € ({result['total_return_pct']:+.2f}%)"
+        )
+
+    trading_since = portfolio.equity_curve[0]["date"].strftime("%d.%m.%Y %H:%M")
+    return (
+        f"{headline}\n"
+        f"Počiatočný vklad: {portfolio.initial_cash:.2f} € | Obchoduje sa od: {trading_since}"
     )

@@ -1,0 +1,20 @@
+{
+  "portfolio": {
+    "initial_cash": 50.0,
+    "cash": 50.0,
+    "shares": 0.0,
+    "fee_pct": 0.001,
+    "trades": [],
+    "equity_curve": [
+      {
+        "date": "2026-08-21T09:30:00-04:00",
+        "equity": 50.0
+      },
+      {
+        "date": "2026-08-21T10:30:00-04:00",
+        "equity": 50.0
+      }
+    ]
+  },
+  "last_processed_bar": "2026-08-21T10:30:00-04:00"
+}

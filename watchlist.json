@@ -34,5 +34,77 @@
       "short_window": 9,
       "long_window": 21
     }
+  },
+  {
+    "ticker": "SOXL",
+    "strategy": "sma_crossover",
+    "cash": 150.0,
+    "fee_pct": 0.1,
+    "interval": "1h",
+    "backfill_hours": 100,
+    "strategy_kwargs": {
+      "short_window": 9,
+      "long_window": 21
+    }
+  },
+  {
+    "ticker": "NVDA",
+    "strategy": "sma_crossover",
+    "cash": 150.0,
+    "fee_pct": 0.1,
+    "interval": "1h",
+    "backfill_hours": 100,
+    "strategy_kwargs": {
+      "short_window": 9,
+      "long_window": 21
+    }
+  },
+  {
+    "ticker": "TSLA",
+    "strategy": "sma_crossover",
+    "cash": 150.0,
+    "fee_pct": 0.1,
+    "interval": "1h",
+    "backfill_hours": 100,
+    "strategy_kwargs": {
+      "short_window": 9,
+      "long_window": 21
+    }
+  },
+  {
+    "ticker": "GME",
+    "strategy": "sma_crossover",
+    "cash": 150.0,
+    "fee_pct": 0.1,
+    "interval": "1h",
+    "backfill_hours": 100,
+    "strategy_kwargs": {
+      "short_window": 9,
+      "long_window": 21
+    }
+  },
+  {
+    "ticker": "AMC",
+    "strategy": "sma_crossover",
+    "cash": 150.0,
+    "fee_pct": 0.1,
+    "interval": "1h",
+    "backfill_hours": 100,
+    "strategy_kwargs": {
+      "short_window": 9,
+      "long_window": 21
+    }
+  },
+  {
+    "ticker": "MRNA",
+    "strategy": "sma_crossover",
+    "cash": 150.0,
+    "fee_pct": 0.1,
+    "interval": "1h",
+    "backfill_hours": 100,
+    "strategy_kwargs": {
+      "short_window": 9,
+      "long_window": 21
+    }
   }
 ]

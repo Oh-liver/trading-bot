@@ -176,7 +176,7 @@ def run_live_check(
         "current_equity": current_equity,
         "cash": portfolio.cash,
         "shares": portfolio.shares,
-        "total_return_pct": (current_equity / initial_cash - 1) * 100,
+        "total_return_pct": (current_equity / portfolio.initial_cash - 1) * 100,
         "num_trades": len(portfolio.trades),
         "portfolio": portfolio,
     }

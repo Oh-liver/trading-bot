@@ -21,6 +21,23 @@ class Trade:
     cash_after: float
 
 
+class SharedPool:
+    """Spoločná hotovostná rezerva zdieľaná naprieč všetkými tickermi vo
+    watchliste. Ak tickeru dôjde jeho vlastná (lokálna) hotovosť, môže si
+    na ďalší nákup požičať z tohto poolu - výnos z neskoršieho predaja
+    tejto pozície sa vráti späť do poolu, nie tickeru samotnému."""
+
+    def __init__(self, balance: float = 0.0):
+        self.balance = balance
+
+    def to_dict(self) -> dict:
+        return {"balance": self.balance}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SharedPool":
+        return cls(balance=data.get("balance", 0.0))
+
+
 class Portfolio:
     def __init__(self, initial_cash: float = 10_000.0, fee_pct: float = 0.001):
         """
@@ -31,28 +48,49 @@ class Portfolio:
         self.cash = initial_cash
         self.shares = 0.0
         self.fee_pct = fee_pct
+        self.funded_by = None  # "local" alebo "pool" - odkiaľ je financovaná aktuálna pozícia
         self.trades: list[Trade] = []
         self.equity_curve: list[dict] = []  # denný záznam hodnoty portfólia
 
-    def buy(self, date, price: float) -> bool:
-        if self.cash <= 0 or self.shares > 0:
-            return False  # už sme "in" alebo nemáme peniaze
-        fee = self.cash * self.fee_pct
-        usable_cash = self.cash - fee
+    def buy(self, date, price: float, pool: "SharedPool" = None) -> bool:
+        if self.shares > 0:
+            return False  # už sme "in"
+
+        if self.cash > 0:
+            source = "local"
+            available = self.cash
+        elif pool is not None and pool.balance > 0:
+            source = "pool"
+            available = pool.balance
+        else:
+            return False  # nemáme peniaze ani lokálne, ani v poole
+
+        fee = available * self.fee_pct
+        usable_cash = available - fee
         self.shares = usable_cash / price
-        self.cash = 0.0
+        if source == "local":
+            self.cash = 0.0
+        else:
+            pool.balance = 0.0
+        self.funded_by = source
         self.trades.append(Trade(date, "BUY", price, self.shares, self.cash))
         return True
 
-    def sell(self, date, price: float) -> bool:
+    def sell(self, date, price: float, pool: "SharedPool" = None) -> bool:
         if self.shares <= 0:
             return False  # nemáme čo predať
         proceeds = self.shares * price
         fee = proceeds * self.fee_pct
-        self.cash = proceeds - fee
+        net = proceeds - fee
         sold_shares = self.shares
         self.shares = 0.0
-        self.trades.append(Trade(date, "SELL", price, sold_shares, self.cash))
+        if self.funded_by == "pool" and pool is not None:
+            pool.balance += net
+            self.cash = 0.0
+        else:
+            self.cash = net
+        self.funded_by = None
+        self.trades.append(Trade(date, "SELL", price, sold_shares, net))
         return True
 
     def mark_to_market(self, date, price: float):
@@ -93,6 +131,7 @@ class Portfolio:
             "cash": self.cash,
             "shares": self.shares,
             "fee_pct": self.fee_pct,
+            "funded_by": self.funded_by,
             "trades": [
                 {
                     "date": pd.Timestamp(t.date).isoformat(),
@@ -115,6 +154,7 @@ class Portfolio:
         p = cls(initial_cash=data["initial_cash"], fee_pct=data["fee_pct"])
         p.cash = data["cash"]
         p.shares = data["shares"]
+        p.funded_by = data.get("funded_by")  # chýba v staršom stave -> predpokladáme lokálne financovanie
         p.trades = [
             Trade(
                 date=pd.Timestamp(t["date"]),

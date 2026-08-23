@@ -21,10 +21,27 @@ import pandas as pd
 
 from data import get_price_data
 from strategy import STRATEGIES
-from portfolio import Portfolio
+from portfolio import Portfolio, SharedPool
 
 STATE_DIR = os.path.join(os.path.dirname(__file__), "state")
 os.makedirs(STATE_DIR, exist_ok=True)
+
+POOL_DEFAULT_BALANCE = 200.0
+_POOL_PATH = os.path.join(STATE_DIR, "shared_pool.json")
+
+
+def load_shared_pool(default_balance: float = POOL_DEFAULT_BALANCE) -> SharedPool:
+    """Vráti spoločný pool zdieľaný naprieč všetkými tickermi. Ak ešte
+    neexistuje uložený stav, vytvorí nový s počiatočným zostatkom."""
+    if not os.path.exists(_POOL_PATH):
+        return SharedPool(balance=default_balance)
+    with open(_POOL_PATH, "r") as f:
+        return SharedPool.from_dict(json.load(f))
+
+
+def save_shared_pool(pool: SharedPool):
+    with open(_POOL_PATH, "w") as f:
+        json.dump(pool.to_dict(), f, indent=2)
 
 
 def _slug(ticker: str, strategy_name: str) -> str:
@@ -115,6 +132,7 @@ def run_live_check(
     Vráti dict so zhrnutím tohto behu (na zobrazenie v UI / logu).
     """
     portfolio, last_processed = load_state(ticker, strategy_name, initial_cash, fee_pct)
+    pool = load_shared_pool()
 
     df = get_price_data(ticker, period=period, interval=interval, use_cache=False)
 
@@ -141,9 +159,9 @@ def run_live_check(
         for ts, row in backfill_df.iterrows():
             price = float(row["Close"])
             bar_action = "NONE"
-            if row["signal"] == "BUY" and portfolio.buy(ts, price):
+            if row["signal"] == "BUY" and portfolio.buy(ts, price, pool=pool):
                 bar_action = "BUY"
-            elif row["signal"] == "SELL" and portfolio.sell(ts, price):
+            elif row["signal"] == "SELL" and portfolio.sell(ts, price, pool=pool):
                 bar_action = "SELL"
 
             portfolio.mark_to_market(ts, price)
@@ -152,22 +170,25 @@ def run_live_check(
 
         last_processed = backfill_df.index[-1]
         save_state(ticker, strategy_name, portfolio, last_processed)
+        save_shared_pool(pool)
         action_taken = f"BACKFILL ({sum(1 for a in actions_log if a != 'NONE')} obchod(y) za posledných {backfill_hours:.0f}h)"
 
     elif is_new_bar:
-        if latest_signal == "BUY" and portfolio.buy(latest_ts, latest_price):
+        if latest_signal == "BUY" and portfolio.buy(latest_ts, latest_price, pool=pool):
             action_taken = "BUY"
-        elif latest_signal == "SELL" and portfolio.sell(latest_ts, latest_price):
+        elif latest_signal == "SELL" and portfolio.sell(latest_ts, latest_price, pool=pool):
             action_taken = "SELL"
 
         portfolio.mark_to_market(latest_ts, latest_price)
         append_log(ticker, strategy_name, latest_ts, latest_price, portfolio.equity_df()["equity"].iloc[-1], action_taken)
         last_processed = latest_ts
         save_state(ticker, strategy_name, portfolio, last_processed)
+        save_shared_pool(pool)
 
     current_equity = portfolio.cash + portfolio.shares * latest_price
 
     return {
+        "pool_balance": pool.balance,
         "is_new_bar": is_new_bar,
         "is_fresh_start": is_fresh_start,
         "action_taken": action_taken,

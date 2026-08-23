@@ -91,6 +91,7 @@ def main():
                 backfill_hours=entry.get("backfill_hours", 5.0),
             )
             messages.append(format_result_message(entry["ticker"], result))
+        messages.append(f"💰 Spoločný pool: {result['pool_balance']:.2f} €")
         send_discord_notification("\n".join(messages))
         return
 

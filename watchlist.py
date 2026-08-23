@@ -26,3 +26,5 @@ def load_watchlist() -> list[dict]:
 def save_watchlist(entries: list[dict]) -> None:
     with open(WATCHLIST_PATH, "w") as f:
         json.dump(entries, f, indent=2)
+
+

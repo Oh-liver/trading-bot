@@ -461,12 +461,15 @@ with tab_live:
         total_allocation = overview_df["Alokácia (€)"].sum()
         total_value = overview_df["Hodnota (€)"].sum()
         total_return = (total_value / total_allocation - 1) * 100 if total_allocation else 0.0
-        c1, c2, c3 = st.columns(3)
+        pool_balance = live_module.load_shared_pool().balance
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Celková alokácia", f"{total_allocation:,.2f} €",
                    help="Súčet peňažnej alokácie zo všetkých tickerov vo watchliste.")
         c2.metric("Aktuálna hodnota portfólia", f"{total_value:,.2f} €",
                    help="Súčet hotovosti + hodnoty otvorených pozícií naprieč všetkými tickermi.")
         c3.metric("Celková návratnosť", f"{total_return:+.2f}%")
+        c4.metric("💰 Spoločný pool", f"{pool_balance:,.2f} €",
+                   help="Zdieľaná hotovosť naprieč celým watchlistom - použije sa na nákup, keď tickeru dôjde vlastná alokácia; výnos z takto financovanej pozície sa vráti späť sem.")
 
         if equity_traces:
             header_with_tooltip(
@@ -584,6 +587,8 @@ with tab_live:
                     "Equity (€)": result["current_equity"],
                     "Návratnosť (%)": result["total_return_pct"],
                 })
+                pool_balance_after_run = result["pool_balance"]
 
             if results_rows:
                 st.dataframe(pd.DataFrame(results_rows), use_container_width=True)
+                st.caption(f"💰 Spoločný pool po tomto behu: {pool_balance_after_run:.2f} €")

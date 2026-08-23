@@ -57,7 +57,8 @@ def format_result_message(ticker: str, result: dict) -> str:
         )
 
     trading_since = portfolio.equity_curve[0]["date"].strftime("%d.%m.%Y %H:%M")
+    funded_note = " (financované zo spoločného poolu)" if portfolio.funded_by == "pool" else ""
     return (
         f"{headline}\n"
-        f"Počiatočný vklad: {portfolio.initial_cash:.2f} € | Obchoduje sa od: {trading_since}"
+        f"Počiatočný vklad: {portfolio.initial_cash:.2f} € | Obchoduje sa od: {trading_since}{funded_note}"
     )

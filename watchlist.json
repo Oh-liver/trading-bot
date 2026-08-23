@@ -2,37 +2,37 @@
   {
     "ticker": "SPY",
     "strategy": "sma_crossover",
-    "cash": 50.0,
+    "cash": 150.0,
     "fee_pct": 0.1,
     "interval": "1h",
-    "backfill_hours": 5,
+    "backfill_hours": 100,
     "strategy_kwargs": {
-      "short_window": 3,
-      "long_window": 10
+      "short_window": 9,
+      "long_window": 21
     }
   },
   {
     "ticker": "TQQQ",
     "strategy": "sma_crossover",
-    "cash": 50.0,
+    "cash": 150.0,
     "fee_pct": 0.1,
     "interval": "1h",
-    "backfill_hours": 5,
+    "backfill_hours": 100,
     "strategy_kwargs": {
-      "short_window": 3,
-      "long_window": 10
+      "short_window": 10,
+      "long_window": 30
     }
   },
   {
     "ticker": "QQQ",
     "strategy": "sma_crossover",
-    "cash": 50.0,
+    "cash": 150.0,
     "fee_pct": 0.1,
     "interval": "1h",
-    "backfill_hours": 5,
+    "backfill_hours": 100,
     "strategy_kwargs": {
-      "short_window": 3,
-      "long_window": 10
+      "short_window": 9,
+      "long_window": 21
     }
   }
 ]

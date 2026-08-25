@@ -9,6 +9,8 @@ Spustenie lokálne:
 Otvorí sa v prehliadači na http://localhost:8501
 """
 
+import time
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -54,6 +56,32 @@ def header_with_tooltip(text: str, tooltip: str, level: str = "subheader"):
     )
 
 
+def generate_param_grid(strategy_name: str, param_ranges: dict) -> list[dict]:
+    """Vygeneruje zoznam všetkých celočíselných kombinácií parametrov (vrátane
+    oboch koncov rozsahu) pre danú stratégiu - používa optimalizačný tab."""
+    if strategy_name == "sma_crossover":
+        short_min, short_max = param_ranges["short"]
+        long_min, long_max = param_ranges["long"]
+        return [
+            {"short_window": s, "long_window": l}
+            for s in range(short_min, short_max + 1)
+            for l in range(long_min, long_max + 1)
+            if s < l
+        ]
+    if strategy_name == "rsi":
+        p_min, p_max = param_ranges["period"]
+        os_min, os_max = param_ranges["oversold"]
+        ob_min, ob_max = param_ranges["overbought"]
+        return [
+            {"period": p, "oversold": o, "overbought": b}
+            for p in range(p_min, p_max + 1)
+            for o in range(os_min, os_max + 1)
+            for b in range(ob_min, ob_max + 1)
+            if o < b
+        ]
+    return []
+
+
 COMMON_TICKERS = ["SPY", "QQQ", "TQQQ", "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META"]
 CUSTOM_TICKER_OPTION = "Vlastný (napíš ticker)"
 
@@ -72,7 +100,11 @@ def ticker_selector(label: str, key_prefix: str, default: str = "SPY") -> str:
     return choice
 
 
-tab_backtest, tab_live = st.tabs(["📊 Backtest (historické dáta)", "🔴 Live simulácia (reálne dáta, teraz)"])
+tab_backtest, tab_live, tab_optimize = st.tabs([
+    "📊 Backtest (historické dáta)",
+    "🔴 Live simulácia (reálne dáta, teraz)",
+    "🧪 Optimalizácia parametrov",
+])
 
 # ---------- Sidebar: nastavenia pre BACKTEST ----------
 st.sidebar.header("⚙️ Backtest - nastavenia")
@@ -592,3 +624,180 @@ with tab_live:
             if results_rows:
                 st.dataframe(pd.DataFrame(results_rows), use_container_width=True)
                 st.caption(f"💰 Spoločný pool po tomto behu: {pool_balance_after_run:.2f} €")
+
+
+# ---------- Sidebar: nastavenia pre OPTIMALIZÁCIU ----------
+st.sidebar.header("🧪 Optimalizácia - nastavenia")
+
+MAX_OPT_COMBOS = 250
+
+opt_ticker = ticker_selector("Ticker (optimalizácia)", "optimize_ticker")
+
+opt_col_a, opt_col_b = st.sidebar.columns(2)
+opt_start_date = opt_col_a.date_input(
+    "Od", value=pd.to_datetime("2022-01-01"), key="opt_start",
+    help="Začiatok obdobia, na ktorom sa otestujú všetky kombinácie parametrov.",
+)
+opt_end_date = opt_col_b.date_input(
+    "Do", value=pd.Timestamp.now().normalize(), key="opt_end",
+    help="Koniec testovaného obdobia.",
+)
+opt_interval = st.sidebar.selectbox(
+    "Interval sviečok (optimalizácia)", options=["1d", "1h"], key="opt_interval",
+    help="1d = denné sviečky (roky histórie). 1h = hodinové - yfinance obmedzuje na cca posledných 730 dní, "
+         "priprav tomu zodpovedajúci dátumový rozsah 'Od'.",
+)
+
+opt_strategy_name = st.sidebar.selectbox(
+    "Stratégia (optimalizácia)", options=list(STRATEGIES.keys()), key="opt_strategy",
+    help="Pre zvolenú stratégiu sa vyskúšajú všetky celočíselné kombinácie parametrov v rozsahoch nižšie "
+         f"(max {MAX_OPT_COMBOS} kombinácií naraz, aby to bežalo v rozumnom čase).",
+)
+
+if opt_strategy_name == "sma_crossover":
+    opt_short_range = st.sidebar.slider(
+        "Rozsah krátkej SMA", 2, 100, (5, 15), key="opt_short_range",
+        help="Vyskúšajú sa všetky celé čísla v tomto rozsahu ako 'krátka' SMA (musí byť menšia než dlhá).",
+    )
+    opt_long_range = st.sidebar.slider(
+        "Rozsah dlhej SMA", 3, 250, (20, 35), key="opt_long_range",
+        help="Vyskúšajú sa všetky celé čísla v tomto rozsahu ako 'dlhá' SMA.",
+    )
+    opt_param_ranges = {"short": opt_short_range, "long": opt_long_range}
+elif opt_strategy_name == "rsi":
+    opt_period_range = st.sidebar.slider(
+        "Rozsah RSI periódy", 3, 30, (5, 8), key="opt_period_range",
+        help="Vyskúšajú sa všetky celé čísla v tomto rozsahu ako perióda RSI.",
+    )
+    opt_oversold_range = st.sidebar.slider(
+        "Rozsah oversold hranice", 10, 40, (25, 30), key="opt_oversold_range",
+        help="Vyskúšajú sa všetky celé čísla v tomto rozsahu (musí byť menšie než overbought).",
+    )
+    opt_overbought_range = st.sidebar.slider(
+        "Rozsah overbought hranice", 60, 90, (70, 75), key="opt_overbought_range",
+        help="Vyskúšajú sa všetky celé čísla v tomto rozsahu.",
+    )
+    opt_param_ranges = {"period": opt_period_range, "oversold": opt_oversold_range, "overbought": opt_overbought_range}
+else:
+    opt_param_ranges = {}
+
+opt_initial_cash = st.sidebar.number_input(
+    "Počiatočný kapitál (optimalizácia, €)", value=10_000, step=1000, key="opt_cash",
+    help="Koľko virtuálnych peňazí sa použije pri každej otestovanej kombinácii.",
+)
+opt_fee_pct = st.sidebar.slider(
+    "Poplatok za obchod (optimalizácia, %)", 0.0, 1.0, 0.1, key="opt_fee",
+    help="Simulovaný transakčný poplatok pri každom nákupe/predaji.",
+) / 100
+
+opt_run_button = st.sidebar.button(
+    "▶️ Spustiť optimalizáciu", type="primary", key="opt_run_btn",
+    help="Stiahne dáta raz a otestuje na nich každú kombináciu parametrov v zadaných rozsahoch.",
+)
+
+
+# ---------- OPTIMALIZÁCIA tab - hlavná logika ----------
+with tab_optimize:
+    st.caption(
+        "Vyskúša všetky celočíselné kombinácie parametrov zvolenej stratégie v zadaných rozsahoch "
+        "(bez desatinných čísel) na jednom historickom období, zapamätá si kombináciu s najvyššou "
+        "návratnosťou a porovná ju s jednoduchým 'kúp a drž'. Pozor: viac kombinácií a dlhšie "
+        "obdobie = dlhšie čakanie."
+    )
+
+    if opt_run_button:
+        combos = generate_param_grid(opt_strategy_name, opt_param_ranges)
+
+        if not combos:
+            st.error("V zadaných rozsahoch nevznikla žiadna platná kombinácia (napr. krátka musí byť menšia než dlhá / oversold menší než overbought).")
+            st.stop()
+
+        if len(combos) > MAX_OPT_COMBOS:
+            st.error(
+                f"Priveľa kombinácií ({len(combos)}) - zmenši rozsahy v ľavom paneli "
+                f"(max {MAX_OPT_COMBOS} naraz, aby optimalizácia bežala v rozumnom čase)."
+            )
+            st.stop()
+
+        try:
+            with st.spinner(f"Sťahujem dáta pre {opt_ticker}..."):
+                opt_df = get_price_data(opt_ticker, start=str(opt_start_date), end=str(opt_end_date), interval=opt_interval)
+        except Exception as e:
+            st.error(f"Chyba pri sťahovaní dát: {e}")
+            st.stop()
+
+        benchmark_equity = buy_and_hold_equity(opt_df, initial_cash=opt_initial_cash)
+        benchmark_return = (
+            (benchmark_equity["equity"].iloc[-1] / opt_initial_cash - 1) * 100
+            if not benchmark_equity.empty else 0.0
+        )
+
+        strategy_fn = STRATEGIES[opt_strategy_name]
+        results = []
+        progress = st.progress(0.0, text=f"Testujem 0 / {len(combos)} kombinácií...")
+        start_time = time.time()
+        for i, kwargs in enumerate(combos):
+            signals_df = strategy_fn(opt_df, **kwargs)
+            portfolio = run_backtest(signals_df, initial_cash=opt_initial_cash, fee_pct=opt_fee_pct)
+            summary = summarize(portfolio, benchmark_equity)
+            results.append({
+                **kwargs,
+                "return_pct": summary["bot_return_pct"],
+                "num_trades": summary["num_trades"],
+                "max_drawdown_pct": summary["max_drawdown_pct"],
+            })
+            progress.progress((i + 1) / len(combos), text=f"Testujem {i + 1} / {len(combos)} kombinácií...")
+        progress.empty()
+        elapsed = time.time() - start_time
+
+        results_df = pd.DataFrame(results).sort_values("return_pct", ascending=False).reset_index(drop=True)
+        best = results_df.iloc[0]
+        param_cols = [c for c in results_df.columns if c not in ("return_pct", "num_trades", "max_drawdown_pct")]
+
+        header_with_tooltip(
+            "Najlepšia nájdená kombinácia",
+            "Kombinácia parametrov s najvyššou návratnosťou spomedzi všetkých vyskúšaných v zadaných rozsahoch.",
+        )
+        # best[k] prechádza cez Series (.iloc[0]) zdieľanú s float stĺpcami (return_pct...),
+        # takže by sa celočíselné parametre zobrazili ako "9.0" - preformátujeme na int, kde to sedí.
+        best_params_str = ", ".join(
+            f"{k}={int(best[k]) if float(best[k]).is_integer() else best[k]}" for k in param_cols
+        )
+        st.markdown(f"**{best_params_str}**")
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Návratnosť (bot)", f"{best['return_pct']:+.2f}%")
+        m2.metric("Buy & Hold", f"{benchmark_return:+.2f}%")
+        m3.metric("Max drawdown", f"{best['max_drawdown_pct']:.2f}%")
+        m4.metric("Počet obchodov", int(best["num_trades"]))
+
+        if best["return_pct"] > benchmark_return:
+            st.success(f"Najlepšia kombinácia porazila buy & hold o {best['return_pct'] - benchmark_return:+.2f} percentuálneho bodu.")
+        else:
+            st.warning(f"Ani najlepšia z {len(combos)} vyskúšaných kombinácií neporazila buy & hold ({benchmark_return:+.2f}%).")
+
+        st.caption(f"Otestovaných {len(combos)} kombinácií za {elapsed:.1f}s na dátach {opt_ticker} ({len(opt_df)} sviečok).")
+
+        header_with_tooltip(
+            "Všetky vyskúšané kombinácie",
+            "Zoradené zostupne podľa návratnosti - najlepšia hore.",
+        )
+        st.dataframe(results_df, use_container_width=True)
+
+        if opt_strategy_name == "sma_crossover":
+            header_with_tooltip(
+                "Mapa výnosnosti (krátka × dlhá SMA)",
+                "Farba = návratnosť danej kombinácie parametrov. Chýbajúce políčka = krátka >= dlhá (neplatná kombinácia).",
+            )
+            pivot = results_df.pivot(index="long_window", columns="short_window", values="return_pct")
+            fig_heat = go.Figure(data=go.Heatmap(
+                z=pivot.values, x=pivot.columns, y=pivot.index,
+                colorscale="RdYlGn", colorbar=dict(title="Návratnosť (%)"),
+            ))
+            fig_heat.update_layout(
+                height=450, margin=dict(l=20, r=20, t=20, b=20),
+                xaxis_title="Krátka SMA", yaxis_title="Dlhá SMA",
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
+    else:
+        st.info("Nastav ticker, obdobie, stratégiu a rozsahy parametrov v ľavom paneli a klikni na 'Spustiť optimalizáciu'.")

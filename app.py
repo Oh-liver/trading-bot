@@ -629,7 +629,7 @@ with tab_live:
 # ---------- Sidebar: nastavenia pre OPTIMALIZÁCIU ----------
 st.sidebar.header("🧪 Optimalizácia - nastavenia")
 
-MAX_OPT_COMBOS = 250
+MAX_OPT_COMBOS = 350
 
 opt_ticker = ticker_selector("Ticker (optimalizácia)", "optimize_ticker")
 

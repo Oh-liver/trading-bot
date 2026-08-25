@@ -7,8 +7,8 @@
     "interval": "1h",
     "backfill_hours": 100,
     "strategy_kwargs": {
-      "short_window": 9,
-      "long_window": 21
+      "short_window": 8,
+      "long_window": 13
     }
   },
   {

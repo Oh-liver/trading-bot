@@ -19,8 +19,8 @@
     "interval": "1h",
     "backfill_hours": 100,
     "strategy_kwargs": {
-      "short_window": 10,
-      "long_window": 30
+      "short_window": 20,
+      "long_window": 22
     }
   },
   {
@@ -31,8 +31,8 @@
     "interval": "1h",
     "backfill_hours": 100,
     "strategy_kwargs": {
-      "short_window": 9,
-      "long_window": 21
+      "short_window": 8,
+      "long_window": 15
     }
   },
   {
@@ -56,7 +56,7 @@
     "backfill_hours": 100,
     "strategy_kwargs": {
       "short_window": 9,
-      "long_window": 21
+      "long_window": 16
     }
   },
   {
@@ -68,7 +68,7 @@
     "backfill_hours": 100,
     "strategy_kwargs": {
       "short_window": 9,
-      "long_window": 21
+      "long_window": 26
     }
   },
   {

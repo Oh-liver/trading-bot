@@ -53,9 +53,19 @@ jobs:
       # DISCORD_WEBHOOK_URL: nastav ako GitHub secret (Settings -> Secrets and
       # variables -> Actions), ak chceš pri BUY/SELL signáli dostať upozornenie
       # na Discord. Bez neho beží bot ďalej, len bez notifikácií.
+      #
+      # T212_LIVE_TRADING / T212_API_KEY / T212_API_SECRET / T212_ENV: voliteľné
+      # GitHub secrets na zapnutie SKUTOČNÉHO obchodovania cez Trading212 - viď
+      # README. Bez T212_LIVE_TRADING=true bot obchoduje len virtuálne (paper),
+      # presne ako doteraz. POZOR: GitHub Actions runnery bežia z premenlivých
+      # IP adries - IP-whitelist na Trading212 API kľúči tu nepoužívaj.
       - name: Live kontrola - watchlist (všetky tickery)
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          T212_LIVE_TRADING: ${{ secrets.T212_LIVE_TRADING }}
+          T212_API_KEY: ${{ secrets.T212_API_KEY }}
+          T212_API_SECRET: ${{ secrets.T212_API_SECRET }}
+          T212_ENV: ${{ secrets.T212_ENV }}
         run: python live_runner.py --watchlist watchlist.json
 
       # Zmenený priečinok state/ (stav portfólia + log obchodov) sa commitne

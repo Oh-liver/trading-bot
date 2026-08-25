@@ -1,8 +1,9 @@
 """
 notify.py
-Odoslanie upozornenia o BUY/SELL signáli cez Discord webhook - live bot
-neobchoduje reálne peniaze sám, len upozorní, aby si obchod vykonal
-ručne u svojho brokera (napr. Trading212).
+Odoslanie upozornenia o BUY/SELL signáli cez Discord webhook. Ak nie je
+zapnuté reálne obchodovanie (viď broker_t212.py), bot len upozorní, aby si
+obchod vykonal ručne u svojho brokera (napr. Trading212) - inak správa
+odráža, že objednávka bola naozaj zadaná.
 """
 
 import os
@@ -24,17 +25,29 @@ def send_discord_notification(message: str, webhook_url: str = None) -> bool:
         return False
 
 
-def format_trade_message(ticker: str, action: str, price: float, trade_cash: float) -> str:
-    """Zostaví čitateľnú správu o obchode, ktorý treba ručne vykonať u brokera."""
+def format_trade_message(ticker: str, action: str, price: float, trade_cash: float, real: bool = False) -> str:
+    """Zostaví čitateľnú správu o obchode. Ak `real` je True, obchod bol naozaj
+    zadaný u brokera (Trading212); inak ide len o virtuálny (paper) obchod a treba
+    ho prípadne vykonať ručne."""
     if action == "BUY":
+        if real:
+            return (
+                f"🟢✅ **BUY vykonaný na Trading212** - {ticker} @ {price:.2f}\n"
+                f"Suma cca **{trade_cash:.2f} €**."
+            )
         return (
             f"🟢 **BUY signál** - {ticker} @ {price:.2f}\n"
-            f"Investuj cca **{trade_cash:.2f} €** (alokácia pre tento ticker)."
+            f"Investuj cca **{trade_cash:.2f} €** (alokácia pre tento ticker) - vykonaj ručne u brokera."
         )
     if action == "SELL":
+        if real:
+            return (
+                f"🔴✅ **SELL vykonaný na Trading212** - {ticker} @ {price:.2f}\n"
+                f"Výnos cca {trade_cash:.2f} €."
+            )
         return (
             f"🔴 **SELL signál** - {ticker} @ {price:.2f}\n"
-            f"Predaj celú svoju pozíciu v **{ticker}** (výnos cca {trade_cash:.2f} €)."
+            f"Predaj celú svoju pozíciu v **{ticker}** ručne (výnos cca {trade_cash:.2f} €)."
         )
     return f"ℹ️ {ticker}: {action} @ {price:.2f}"
 
@@ -46,10 +59,17 @@ def format_result_message(ticker: str, result: dict) -> str:
     portfolio = result["portfolio"]
     action = result["action_taken"]
 
-    if action in ("BUY", "SELL"):
+    if action.startswith("BROKER_ERROR"):
+        detail = action.split(":", 1)[1].strip() if ":" in action else action
+        headline = (
+            f"🚫 {ticker}: nastal signál, ale REÁLNA objednávka na Trading212 zlyhala - {detail}\n"
+            f"Skúsi sa znova pri ďalšom behu."
+        )
+    elif action in ("BUY", "SELL"):
         last_trade = portfolio.trades[-1]
         trade_cash = last_trade.shares * last_trade.price if action == "BUY" else last_trade.cash_after
-        headline = format_trade_message(ticker, action, result["latest_price"], trade_cash)
+        headline = format_trade_message(ticker, action, result["latest_price"], trade_cash,
+                                         real=result.get("broker_used", False))
     else:
         headline = (
             f"⚪ {ticker}: žiadny obchod túto hodinu @ {result['latest_price']:.2f} | "

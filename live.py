@@ -1,7 +1,9 @@
 """
 live.py
-Live simulácia obchodovania - reálne, aktuálne dáta z burzy, ale
-virtuálne peniaze (žiadny broker, žiadne skutočné obchody).
+Live simulácia obchodovania - reálne, aktuálne dáta z burzy. Predvolene
+virtuálne peniaze (žiadny broker, žiadne skutočné obchody); voliteľne, ak sa
+do run_live_check() odovzdá `broker` (Trading212Client) a `instrument_ticker`,
+zadá sa na novej sviečke aj SKUTOČNÝ market order - viď broker_t212.py.
 
 Kľúčový rozdiel oproti backtest.py: tu bot NEVIE dopredu celú históriu.
 Pri každom spustení (napr. raz za hodinu cez naplánovanú úlohu) sa:
@@ -117,6 +119,8 @@ def run_live_check(
     interval: str = "1h",
     period: str = "7d",
     backfill_hours: float = 5.0,
+    broker=None,
+    instrument_ticker: str = None,
 ) -> dict:
     """
     Vykoná jednu 'kontrolu' live bota:
@@ -125,9 +129,19 @@ def run_live_check(
       sviečky rovno spracuje posledných `backfill_hours` hodín histórie ako
       mini-backtest, akoby bot bežal už od toho momentu. Vďaka tomu má bot
       hneď na začiatku nejakú históriu/pozíciu namiesto prázdneho štartu.
+      Táto časť je len virtuálna - reálne objednávky sa tu NEzadávajú.
     - PRI ĎALŠÍCH spusteniach: ak pribudla nová (predtým nespracovaná)
       sviečka, vyhodnotí sa na nej signál a prípadne sa vykoná nákup/predaj.
     - uloží stav
+
+    broker / instrument_ticker: ak je zadaný `broker` (Trading212Client) aj
+    `instrument_ticker` (presný kód nástroja pre Trading212, napr. "AAPL_US_EQ"),
+    na novej sviečke sa pred virtuálnym obchodom najprv zadá SKUTOČNÝ market
+    order rovnakej veľkosti u brokera. Ak reálna objednávka zlyhá, virtuálny
+    stav sa NEZMENÍ a NEULOŽÍ, aby sa rovnaká (stále "najnovšia") sviečka
+    skúsila znova pri ďalšom behu - inak by mohol signál (jednorázový
+    crossover) prepadnúť bez vykonania. Bez brokera sa správa presne ako
+    doteraz (čisto virtuálne/papierové obchodovanie).
 
     Vráti dict so zhrnutím tohto behu (na zobrazenie v UI / logu).
     """
@@ -147,6 +161,8 @@ def run_live_check(
     actions_log = []
     is_new_bar = last_processed is None or latest_ts > last_processed
     is_fresh_start = last_processed is None
+    real_trade_executed = False
+    broker_error = None
 
     if is_fresh_start:
         # Prvé spustenie: "dobehneme" posledných `backfill_hours` hodín ako mini-backtest,
@@ -174,16 +190,46 @@ def run_live_check(
         action_taken = f"BACKFILL ({sum(1 for a in actions_log if a != 'NONE')} obchod(y) za posledných {backfill_hours:.0f}h)"
 
     elif is_new_bar:
-        if latest_signal == "BUY" and portfolio.buy(latest_ts, latest_price, pool=pool):
-            action_taken = "BUY"
-        elif latest_signal == "SELL" and portfolio.sell(latest_ts, latest_price, pool=pool):
-            action_taken = "SELL"
+        intended_action = "NONE"
+        intended_shares = 0.0
 
-        portfolio.mark_to_market(latest_ts, latest_price)
-        append_log(ticker, strategy_name, latest_ts, latest_price, portfolio.equity_df()["equity"].iloc[-1], action_taken)
-        last_processed = latest_ts
-        save_state(ticker, strategy_name, portfolio, last_processed)
-        save_shared_pool(pool)
+        if latest_signal == "BUY":
+            preview = portfolio.preview_buy(latest_price, pool=pool)
+            if preview is not None:
+                intended_action = "BUY"
+                intended_shares = preview[1]
+        elif latest_signal == "SELL" and portfolio.shares > 0:
+            intended_action = "SELL"
+            intended_shares = portfolio.shares
+
+        if intended_action != "NONE" and broker is not None:
+            if not instrument_ticker:
+                broker_error = "chýba 't212_ticker' pre tento záznam vo watchlist.json"
+            else:
+                order_qty = intended_shares if intended_action == "BUY" else -intended_shares
+                try:
+                    broker.place_market_order(instrument_ticker, order_qty)
+                    real_trade_executed = True
+                except Exception as e:
+                    broker_error = str(e)
+
+        if broker_error is not None:
+            # Reálna objednávka zlyhala - stav sa NEmení a NEukladá, aby sa
+            # táto istá sviečka skúsila znova pri ďalšom behu.
+            action_taken = f"BROKER_ERROR: {broker_error}"
+        else:
+            if intended_action == "BUY":
+                portfolio.buy(latest_ts, latest_price, pool=pool)
+                action_taken = "BUY"
+            elif intended_action == "SELL":
+                portfolio.sell(latest_ts, latest_price, pool=pool)
+                action_taken = "SELL"
+
+            portfolio.mark_to_market(latest_ts, latest_price)
+            append_log(ticker, strategy_name, latest_ts, latest_price, portfolio.equity_df()["equity"].iloc[-1], action_taken)
+            last_processed = latest_ts
+            save_state(ticker, strategy_name, portfolio, last_processed)
+            save_shared_pool(pool)
 
     current_equity = portfolio.cash + portfolio.shares * latest_price
 
@@ -200,4 +246,6 @@ def run_live_check(
         "total_return_pct": (current_equity / portfolio.initial_cash - 1) * 100,
         "num_trades": len(portfolio.trades),
         "portfolio": portfolio,
+        "broker_used": real_trade_executed,
+        "broker_error": broker_error,
     }

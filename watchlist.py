@@ -8,6 +8,13 @@ naplánovanom behu prejde celý.
 Peňažná alokácia ("cash") sa použije len pri úplne prvom behu pre daný
 ticker+stratégiu - odvtedy si live bot pamätá skutočný stav (cash/akcie)
 v state/<ticker>_<strategia>.json, rovnako ako pri jednom tickeri.
+
+Voliteľné kľúče na SKUTOČNÉ obchodovanie cez Trading212 (viď README):
+  "live_trading": true              - zapne reálne objednávky pre tento ticker
+                                       (navyše treba aj globálny env prepínač
+                                       T212_LIVE_TRADING=true)
+  "t212_ticker": "AAPL_US_EQ"       - presný kód nástroja pre Trading212,
+                                       nájdi cez `python t212_find_ticker.py <SYMBOL>`
 """
 
 import json

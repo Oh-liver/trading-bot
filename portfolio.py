@@ -52,9 +52,13 @@ class Portfolio:
         self.trades: list[Trade] = []
         self.equity_curve: list[dict] = []  # denný záznam hodnoty portfólia
 
-    def buy(self, date, price: float, pool: "SharedPool" = None) -> bool:
+    def preview_buy(self, price: float, pool: "SharedPool" = None):
+        """Bez zmeny stavu vráti (zdroj, počet akcií), ktoré by buy() práve teraz
+        kúpil za daných podmienok, alebo None, ak nákup momentálne nie je možný.
+        Používa sa napr. na zistenie veľkosti objednávky pred jej reálnym zadaním
+        u brokera - viď live.py."""
         if self.shares > 0:
-            return False  # už sme "in"
+            return None  # už sme "in"
 
         if self.cash > 0:
             source = "local"
@@ -63,11 +67,19 @@ class Portfolio:
             source = "pool"
             available = pool.balance
         else:
-            return False  # nemáme peniaze ani lokálne, ani v poole
+            return None  # nemáme peniaze ani lokálne, ani v poole
 
         fee = available * self.fee_pct
-        usable_cash = available - fee
-        self.shares = usable_cash / price
+        shares = (available - fee) / price
+        return source, shares
+
+    def buy(self, date, price: float, pool: "SharedPool" = None) -> bool:
+        preview = self.preview_buy(price, pool=pool)
+        if preview is None:
+            return False
+        source, shares = preview
+
+        self.shares = shares
         if source == "local":
             self.cash = 0.0
         else:

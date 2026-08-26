@@ -1,11 +1,19 @@
 {
   "portfolio": {
     "initial_cash": 150.0,
-    "cash": 150.0,
-    "shares": 0.0,
+    "cash": 0.0,
+    "shares": 2.1276444604670512,
     "fee_pct": 0.001,
-    "funded_by": null,
-    "trades": [],
+    "funded_by": "local",
+    "trades": [
+      {
+        "date": "2026-08-26T15:30:00-04:00",
+        "action": "BUY",
+        "price": 70.43000030517578,
+        "shares": 2.1276444604670512,
+        "cash_after": 0.0
+      }
+    ],
     "equity_curve": [
       {
         "date": "2026-08-17T12:30:00-04:00",
@@ -198,8 +206,12 @@
       {
         "date": "2026-08-26T14:30:00-04:00",
         "equity": 150.0
+      },
+      {
+        "date": "2026-08-26T15:30:00-04:00",
+        "equity": 149.84999999999997
       }
     ]
   },
-  "last_processed_bar": "2026-08-26T14:30:00-04:00"
+  "last_processed_bar": "2026-08-26T15:30:00-04:00"
 }
